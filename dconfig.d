@@ -540,4 +540,14 @@ unittest
 	node = 1.0;
 	node.Reset();
 	node = "abc";
+	bool failed = false;
+	try
+	{
+		node = 1.0;
+	}
+	catch(Exception e)
+	{
+		failed = true;
+	}
+	assert(failed);
 }
