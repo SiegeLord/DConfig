@@ -448,9 +448,15 @@ struct SConfigNode
 		TypeVal = type;
 	}
 	
-	SConfigNode opAssign(T)(T val) if (!is(T == SConfigNode))
+	SConfigNode opAssign(T)(T val)
 	{
-		static if(is(T == bool))
+		static if(is(T == SConfigNode))
+		{
+			this.ChildrenVal = val.ChildrenVal;
+			this.TypeVal = val.TypeVal;
+			this.Storage = val.Storage;
+		}
+		else static if(is(T == bool))
 		{
 			if(Type == Empty || Type == Boolean)
 			{
@@ -487,9 +493,187 @@ struct SConfigNode
 			}
 		}
 		else
+		{
 			static assert(0, "Cannot store this type in SConfigNode.");
+		}
 		
 		return this;
+	}
+	
+	T Value(T)(T def = T.init, bool* is_def = null)
+	{
+		@property
+		void set_def(bool val)
+		{
+			if(is_def !is null)
+				*is_def = false;
+		}
+		
+		static if(is(cstring : T))
+		{
+			if(Type == String)
+			{
+				set_def = false;
+				return cast(T)Storage.String;
+			}
+		}
+		else static if(is(T == bool))
+		{
+			if(Type == Boolean)
+			{
+				set_def = false;
+				return cast(T)Storage.Boolean;
+			}
+		}
+		else static if(is(real : T) || is(T : uint) || is(T : int))
+		{
+			if(Type == Real)
+			{
+				set_def = false;
+				return cast(T)Storage.Real;
+			}
+		}
+		else
+		{
+			static assert(0, "Cannot extract this type from SConfigNode");
+		}
+		
+		set_def = true;
+		return def;
+	}
+	
+	T opCast(T)()
+	{
+		bool is_def;
+		auto ret = Value!(T)(T.init, &is_def);
+		
+		cstring reason;
+		switch(Type)
+		{
+			case Real:
+				reason = "holds a real value.";
+				break;
+			case String:
+				reason = "holds a string value.";
+				break;
+			case Boolean:
+				reason = "holds a boolea value.";
+				break;
+			case Empty:
+				reason = "is empty.";
+				break;
+			default:
+		}
+		
+		if(is_def)
+			throw new Exception("Cannot extract '" ~ T.stringof ~ "' from this node, it " ~ reason.idup);
+	}
+	
+	bool opEquals(T)(T val)
+	{
+		enum type = ImplicitType!(T);
+		if(type == Type)
+		{
+			static if(type == String)
+			{
+				return Storage.String == val;
+			}
+			else static if(type == Real)
+			{
+				return Storage.Real == cast(real)val;
+			}
+			else static if(type == Boolean)
+			{
+				return Storage.Boolean == val;
+			}
+			assert(0);
+		}
+		else
+		{
+			return false;
+		}
+	}
+	
+	struct SFilterFruct
+	{
+		SConfigNode Node;
+		bool delegate(SConfigNode) Filter;
+
+		int opApply(scope int delegate(ref SConfigNode) dg)
+		{
+			int ret = 0;
+			foreach(child; Node.Children)
+			{
+				if(Filter(child))
+				{
+					if((ret = dg(child)) != 0)
+						return ret;
+				}
+			}
+			return ret;
+		}
+	}
+	
+	struct SValueFruct(T)
+	{
+		SConfigNode Node;
+		T Value;
+
+		int opApply(scope int delegate(ref SConfigNode) dg)
+		{
+			enum type = SConfigNode.ImplicitType!(T);
+			int ret = 0;
+			foreach(child; Node.Children)
+			{
+				if(child.Type == type || child == Value)
+				{
+					if((ret = dg(child)) != 0)
+						return ret;
+				}
+			}
+			return ret;
+		}
+	}
+	
+	struct STypeFruct
+	{
+		SConfigNode Node;
+		uint Type;
+
+		int opApply(scope int delegate(ref SConfigNode) dg)
+		{
+			int ret = 0;
+			foreach(child; Node.Children)
+			{
+				if(child.Type == Type)
+				{
+					if((ret = dg(child)) != 0)
+						return ret;
+				}
+			}
+			return ret;
+		}
+	}
+	
+	SFilterFruct Filter(bool delegate(SConfigNode) filter)
+	{
+		return SFilterFruct(this, filter);
+	}
+	
+	STypeFruct FilterByType(T)()
+	{
+		auto type = ImplicitType!(T);
+		return FilterByType(type);
+	}
+	
+	STypeFruct FilterByType()(uint type)
+	{
+		return STypeFruct(this, type);
+	}
+	
+	SValueFruct!(T) FilterByValue(T)(T value)
+	{
+		return SValueFruct!(T)(this);
 	}
 	
 	void opOpAssign(immutable(char)[] s : "~")(SConfigNode child)
@@ -497,10 +681,70 @@ struct SConfigNode
 		ChildrenVal ~= child;
 	}
 	
+	SConfigNode FirstByValue(T)(T value)
+	{
+		auto type = ImplicitType!(T);
+		foreach(child; Children)
+		{
+			if(child.Type == type && child == value)
+				return child;
+		}
+		return SConfigNode();
+	}
+	
+	SConfigNode LastByValue(T)(T value)
+	{
+		auto type = ImplicitType!(T);
+		foreach_reverse(child; Children)
+		{
+			if(child.Type == type && child == value)
+			{
+				return child;
+			}
+		}
+		return SConfigNode();
+	}
+	
+	SConfigNode FirstByType()(uint type)
+	{
+		foreach(child; Children)
+		{
+			if(child.Type == type)
+				return child;
+		}
+		return SConfigNode();
+	}
+	
+	SConfigNode FirstByType(T)()
+	{
+		return FirstByType(ImplicitType!(T));
+	}
+	
+	SConfigNode LastByType()(uint type)
+	{
+		foreach_reverse(child; Children)
+		{
+			if(child.Type == type)
+				return child;
+		}
+		return SConfigNode();
+	}
+	
+	SConfigNode LastByType(T)()
+	{
+		return LastByType(ImplicitType!(T));
+	}
+	
 	@property
 	SConfigNode[] Children()
 	{
 		return ChildrenVal;
+	}
+	
+	@property
+	bool IsEmpty()
+	{
+		return Type == Empty;
 	}
 	
 	@property
@@ -523,6 +767,18 @@ struct SConfigNode
 		MaxType
 	}
 protected:
+	template ImplicitType(T)
+	{
+		static if(is(T : const(char)[]))
+			enum uint ImplicitType = String;
+		else static if(is(T : bool))
+			enum uint ImplicitType = Boolean;
+		else static if(is(T : real) || is(T : uint) || is(T : int))
+			enum uint ImplicitType = Real;
+		else
+			static assert(0, "Cannot retrieve this type from SConfigNode.");
+	}
+
 	SConfigNode[] ChildrenVal;
 	
 	union UStorage
@@ -554,6 +810,10 @@ unittest
 		failed = true;
 	}
 	assert(failed);
+	
+	static assert(SConfigNode.ImplicitType!(int) == SConfigNode.Real);
+	static assert(SConfigNode.ImplicitType!(immutable(char)[]) == SConfigNode.String);
+	static assert(SConfigNode.ImplicitType!(bool) == SConfigNode.Boolean);
 }
 
 SConfigNode LoadNode(SParser* parser)
@@ -643,6 +903,7 @@ unittest
 	auto src = 
 	`	1 2 3;
 		a b c;
+		true false;
 		a
 		{
 			b;
@@ -652,4 +913,36 @@ unittest
 	`;
 	
 	auto root = LoadConfig("test", src);
+	assert(root.Children.length == 4);
+	
+	size_t count = 0;
+	foreach(node; root.FilterByType!(real))
+		count++;
+	assert(count == 1, Format("{}", count));
+	
+	count = 0;
+	foreach(node; root.FilterByType(SConfigNode.String))
+		count++;
+	assert(count == 2, Format("{}", count));
+	
+	count = 0;
+	foreach(node; root.FilterByType(SConfigNode.Boolean))
+		count++;
+	assert(count == 1, Format("{}", count));
+	
+	auto child = root.FirstByValue(1);
+	assert(!child.IsEmpty);
+	assert(child == 1);
+	child = root.LastByValue("a");
+	assert(!child.IsEmpty);
+	assert(child == "a");
+	auto str = child.Value!(cstring)();
+	assert(str == "a");
+	
+	count = 0;
+	foreach(node; child.FilterByValue("b"))
+		count++;
+	assert(count == 3, Format("{}", count));
+	
+	assert(root.LastByValue("a").LastByType!(cstring) == "b");
 }
