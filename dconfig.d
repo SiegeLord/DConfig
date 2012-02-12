@@ -3,7 +3,6 @@ module dconfig;
 import TextUtil = tango.text.Util;
 import Array = tango.core.Array;
 import Float = tango.text.convert.Float;
-import Integer = tango.text.convert.Integer;
 import tango.core.Variant;
 import tango.text.convert.Format;
 import tango.io.device.File;
@@ -370,9 +369,9 @@ struct STokenizer
 
 struct SParser
 {
-	this(STokenizer tokenizer)
+	this(cstring filename, cstring src)
 	{
-		Tokenizer = tokenizer;
+		Tokenizer = STokenizer(filename, src);
 		NextToken = Tokenizer.Next();
 		Advance();
 	}
@@ -430,7 +429,7 @@ unittest
 	true
 	`;
 	
-	auto parser = SParser(STokenizer("", src));
+	auto parser = SParser("", src);
 	assert(parser.Peek == EToken.String && parser.CurToken.String == "", parser.CurToken.String);
 	assert(parser.Advance == EToken.String && parser.CurToken.String == `ab"'`, parser.CurToken.String);
 	assert(parser.Advance == EToken.String && parser.CurToken.String == "a\t", parser.CurToken.String);
@@ -475,7 +474,7 @@ struct SConfigNode
 				throw new Exception("Can only assign '" ~ T.stringof ~ "' to SConfigNode with type Real or Empty.");
 			}
 		}
-		else static if(is(T : const(char)[]))
+		else static if(is(T : cstring))
 		{
 			if(Type == Empty || Type == String)
 			{
@@ -488,9 +487,14 @@ struct SConfigNode
 			}
 		}
 		else
-			static assert(0, "Cannot store this type in SConfigNode");
+			static assert(0, "Cannot store this type in SConfigNode.");
 		
 		return this;
+	}
+	
+	void opOpAssign(immutable(char)[] s : "~")(SConfigNode child)
+	{
+		ChildrenVal ~= child;
 	}
 	
 	@property
@@ -525,7 +529,7 @@ protected:
 	{
 		real Real;
 		bool Boolean;
-		const(char)[] String;
+		cstring String;
 	}
 	
 	UStorage Storage;
@@ -550,4 +554,102 @@ unittest
 		failed = true;
 	}
 	assert(failed);
+}
+
+SConfigNode LoadNode(SParser* parser)
+{
+	SConfigNode ret;
+	
+	@property
+	SToken cur_token()
+	{
+		return parser.CurToken;
+	}
+
+	switch(parser.Peek)
+	{
+		case EToken.String:
+			ret = cur_token.String;
+			break;
+		case EToken.Boolean:
+			ret = cur_token.String == "true";
+			break;
+		case EToken.Real:
+			ret = Float.toFloat(cur_token.String);
+			break;
+		default:
+			throw new CDConfigException("Expected a string, boolean or real, not '" ~ cur_token.String.idup ~ "'.", parser.FileName, cur_token.Line);
+	}
+	
+	final switch(parser.Advance)
+	{
+		case EToken.LeftBrace:
+		{
+			auto old_line = cur_token.Line;
+			parser.Advance;
+			while(parser.Peek != EToken.RightBrace)
+			{
+				if(parser.Peek == EToken.EOF)
+					throw new CDConfigException("Unexpected EOF while parsing a composite.", parser.FileName, old_line);
+				auto new_child = LoadNode(parser);
+				assert(new_child.Type != SConfigNode.Empty);
+				ret ~= new_child;
+			}
+			parser.Advance;
+			break;
+		}
+		case EToken.EOF:
+			throw new CDConfigException("Expected ';' not EOF.", parser.FileName, cur_token.Line);
+			break;
+		case EToken.RightBrace:
+			throw new CDConfigException("Expected ';' not '}'.", parser.FileName, cur_token.Line);
+			break;
+		case EToken.SemiColon:
+			parser.Advance;
+			break;
+		case EToken.String:
+		case EToken.Real:
+		case EToken.Boolean:
+			auto new_child = LoadNode(parser);
+			assert(new_child.Type != SConfigNode.Empty);
+			ret ~= new_child;
+			break;
+	}
+	
+	return ret;
+}
+
+SConfigNode LoadConfig(const(char)[] filename, const(char)[] src = null)
+{
+	if(src is null)
+		src = cast(char[])File.get(filename);
+	
+	auto parser = SParser(filename, src);
+	
+	SConfigNode root;
+	
+	while(parser.Peek != EToken.EOF)
+	{
+		auto child = LoadNode(&parser);
+		assert(child.Type != SConfigNode.Empty);
+		root ~= child;
+	}
+	
+	return root;
+}
+
+unittest
+{
+	auto src = 
+	`	1 2 3;
+		a b c;
+		a
+		{
+			b;
+			"b";
+			'"b"';
+		}
+	`;
+	
+	auto root = LoadConfig("test", src);
 }
