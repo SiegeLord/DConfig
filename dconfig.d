@@ -441,7 +441,7 @@ unittest
 	assert(parser.Advance == EToken.Boolean && parser.CurToken.String == `true`, parser.CurToken.String);
 }
 
-struct SNode
+struct SConfigNode
 {
 	this(uint type)
 	{
@@ -449,7 +449,7 @@ struct SNode
 		TypeVal = type;
 	}
 	
-	SNode opAssign(T)(T val) if (!is(T == SNode))
+	SConfigNode opAssign(T)(T val) if (!is(T == SConfigNode))
 	{
 		static if(is(T == bool))
 		{
@@ -460,7 +460,7 @@ struct SNode
 			}
 			else
 			{
-				throw new Exception("Can only assign '" ~ T.stringof ~ "' to SNode with type Boolean or Empty.");
+				throw new Exception("Can only assign '" ~ T.stringof ~ "' to SConfigNode with type Boolean or Empty.");
 			}
 		}
 		else static if(is(T : real) || is(T : uint) || is(T : int))
@@ -472,7 +472,7 @@ struct SNode
 			}
 			else
 			{
-				throw new Exception("Can only assign '" ~ T.stringof ~ "' to SNode with type Real or Empty.");
+				throw new Exception("Can only assign '" ~ T.stringof ~ "' to SConfigNode with type Real or Empty.");
 			}
 		}
 		else static if(is(T : const(char)[]))
@@ -484,17 +484,17 @@ struct SNode
 			}
 			else
 			{
-				throw new Exception("Can only assign '" ~ T.stringof ~ "' to SNode with type String or Empty.");
+				throw new Exception("Can only assign '" ~ T.stringof ~ "' to SConfigNode with type String or Empty.");
 			}
 		}
 		else
-			static assert(0, "Cannot store this type in SNode");
+			static assert(0, "Cannot store this type in SConfigNode");
 		
 		return this;
 	}
 	
 	@property
-	SNode[] Children()
+	SConfigNode[] Children()
 	{
 		return ChildrenVal;
 	}
@@ -519,7 +519,7 @@ struct SNode
 		MaxType
 	}
 protected:
-	SNode[] ChildrenVal;
+	SConfigNode[] ChildrenVal;
 	
 	union UStorage
 	{
@@ -534,7 +534,7 @@ protected:
 
 unittest
 {
-	SNode node;
+	SConfigNode node;
 	node = 1;
 	node.Reset();
 	node = 1.0;
