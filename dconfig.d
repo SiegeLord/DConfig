@@ -506,7 +506,7 @@ struct SConfigNode
 		void set_def(bool val)
 		{
 			if(is_def !is null)
-				*is_def = false;
+				*is_def = val;
 		}
 		
 		static if(is(cstring : T))
@@ -735,6 +735,31 @@ struct SConfigNode
 		return LastByType(ImplicitType!(T));
 	}
 	
+	T ValueOf(T, K)(K key, T def = T.init, bool* is_def = null)
+	{
+		void set_def(bool val)
+		{
+			if(is_def !is null)
+				*is_def = val;
+		}
+		
+		auto key_node = LastByValue(key);
+		if(key_node.IsEmpty)
+		{
+			set_def(true);
+			return def;
+		}
+		
+		auto val_node = key_node.LastByType!(T);
+		if(val_node.IsEmpty)
+		{
+			set_def(true);
+			return def;
+		}
+		
+		return val_node.Value(def, is_def);
+	}
+	
 	@property
 	SConfigNode[] Children()
 	{
@@ -945,4 +970,11 @@ unittest
 	assert(count == 3, Format("{}", count));
 	
 	assert(root.LastByValue("a").LastByType!(cstring) == "b");
+	
+	bool is_def;
+	cstring value = root.ValueOf!(cstring, string)("a", null, &is_def);
+	assert(is_def == false);
+	assert(value == "b", value);
+	assert(root.ValueOf!(real)(1) == 2);
+	assert(root.ValueOf!(cstring)(1) == null);
 }
