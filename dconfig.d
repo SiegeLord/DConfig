@@ -440,23 +440,34 @@ unittest
 	assert(parser.Advance == EToken.Boolean && parser.CurToken.String == `true`, parser.CurToken.String);
 }
 
-struct SConfigNode
+class CConfigNode
 {
-	this(uint type)
+	static __gshared CConfigNode EmptyNode;
+	enum : uint
+	{
+		Empty,
+		Real,
+		String,
+		Boolean,
+		MaxType
+	}
+	
+	shared static this()
+	{
+		EmptyNode = new CConfigNode;
+	}
+	
+	this(uint type = Empty)
 	{
 		assert(type < MaxType);
 		TypeVal = type;
 	}
+
+	alias Set opAssign;
 	
-	SConfigNode opAssign(T)(T val)
+	CConfigNode Set(T)(T val)
 	{
-		static if(is(T == SConfigNode))
-		{
-			this.ChildrenVal = val.ChildrenVal;
-			this.TypeVal = val.TypeVal;
-			this.Storage = val.Storage;
-		}
-		else static if(is(T == bool))
+		static if(is(T == bool))
 		{
 			if(Type == Empty || Type == Boolean)
 			{
@@ -465,7 +476,7 @@ struct SConfigNode
 			}
 			else
 			{
-				throw new Exception("Can only assign '" ~ T.stringof ~ "' to SConfigNode with type Boolean or Empty.");
+				throw new Exception("Can only assign '" ~ T.stringof ~ "' to CConfigNode with type Boolean or Empty.");
 			}
 		}
 		else static if(is(T : real) || is(T : uint) || is(T : int))
@@ -477,7 +488,7 @@ struct SConfigNode
 			}
 			else
 			{
-				throw new Exception("Can only assign '" ~ T.stringof ~ "' to SConfigNode with type Real or Empty.");
+				throw new Exception("Can only assign '" ~ T.stringof ~ "' to CConfigNode with type Real or Empty.");
 			}
 		}
 		else static if(is(T : cstring))
@@ -489,18 +500,18 @@ struct SConfigNode
 			}
 			else
 			{
-				throw new Exception("Can only assign '" ~ T.stringof ~ "' to SConfigNode with type String or Empty.");
+				throw new Exception("Can only assign '" ~ T.stringof ~ "' to CConfigNode with type String or Empty.");
 			}
 		}
 		else
 		{
-			static assert(0, "Cannot store this type in SConfigNode.");
+			static assert(0, "Cannot store this type in CConfigNode.");
 		}
 		
 		return this;
 	}
 	
-	T Value(T)(T def = T.init, bool* is_def = null)
+	T Get(T)(T def = T.init, bool* is_def = null)
 	{
 		@property
 		void set_def(bool val)
@@ -535,7 +546,7 @@ struct SConfigNode
 		}
 		else
 		{
-			static assert(0, "Cannot extract this type from SConfigNode");
+			static assert(0, "Cannot extract this type from CConfigNode");
 		}
 		
 		set_def = true;
@@ -545,8 +556,8 @@ struct SConfigNode
 	T opCast(T)()
 	{
 		bool is_def;
-		auto ret = Value!(T)(T.init, &is_def);
-		
+		auto ret = Get!(T)(T.init, &is_def);
+
 		cstring reason;
 		switch(Type)
 		{
@@ -564,7 +575,7 @@ struct SConfigNode
 				break;
 			default:
 		}
-		
+
 		if(is_def)
 			throw new Exception("Cannot extract '" ~ T.stringof ~ "' from this node, it " ~ reason.idup);
 	}
@@ -596,10 +607,10 @@ struct SConfigNode
 	
 	struct SFilterFruct
 	{
-		SConfigNode Node;
-		bool delegate(SConfigNode) Filter;
+		CConfigNode Node;
+		bool delegate(CConfigNode) Filter;
 
-		int opApply(scope int delegate(ref SConfigNode) dg)
+		int opApply(scope int delegate(ref CConfigNode) dg)
 		{
 			int ret = 0;
 			foreach(child; Node.Children)
@@ -616,12 +627,12 @@ struct SConfigNode
 	
 	struct SValueFruct(T)
 	{
-		SConfigNode Node;
+		CConfigNode Node;
 		T Value;
 
-		int opApply(scope int delegate(ref SConfigNode) dg)
+		int opApply(scope int delegate(ref CConfigNode) dg)
 		{
-			enum type = SConfigNode.ImplicitType!(T);
+			enum type = CConfigNode.ImplicitType!(T);
 			int ret = 0;
 			foreach(child; Node.Children)
 			{
@@ -637,10 +648,10 @@ struct SConfigNode
 	
 	struct STypeFruct
 	{
-		SConfigNode Node;
+		CConfigNode Node;
 		uint Type;
 
-		int opApply(scope int delegate(ref SConfigNode) dg)
+		int opApply(scope int delegate(ref CConfigNode) dg)
 		{
 			int ret = 0;
 			foreach(child; Node.Children)
@@ -655,7 +666,7 @@ struct SConfigNode
 		}
 	}
 	
-	SFilterFruct Filter(bool delegate(SConfigNode) filter)
+	SFilterFruct Filter(bool delegate(CConfigNode) filter)
 	{
 		return SFilterFruct(this, filter);
 	}
@@ -676,12 +687,12 @@ struct SConfigNode
 		return SValueFruct!(T)(this);
 	}
 	
-	void opOpAssign(immutable(char)[] s : "~")(SConfigNode child)
+	void Add(CConfigNode child)
 	{
 		ChildrenVal ~= child;
 	}
 	
-	SConfigNode FirstByValue(T)(T value)
+	CConfigNode FirstByValue(T)(T value)
 	{
 		auto type = ImplicitType!(T);
 		foreach(child; Children)
@@ -689,10 +700,10 @@ struct SConfigNode
 			if(child.Type == type && child == value)
 				return child;
 		}
-		return SConfigNode();
+		return EmptyNode;
 	}
 	
-	SConfigNode LastByValue(T)(T value)
+	CConfigNode LastByValue(T)(T value)
 	{
 		auto type = ImplicitType!(T);
 		foreach_reverse(child; Children)
@@ -702,35 +713,35 @@ struct SConfigNode
 				return child;
 			}
 		}
-		return SConfigNode();
+		return EmptyNode;
 	}
 	
-	SConfigNode FirstByType()(uint type)
+	CConfigNode FirstByType()(uint type)
 	{
 		foreach(child; Children)
 		{
 			if(child.Type == type)
 				return child;
 		}
-		return SConfigNode();
+		return EmptyNode;
 	}
 	
-	SConfigNode FirstByType(T)()
+	CConfigNode FirstByType(T)()
 	{
 		return FirstByType(ImplicitType!(T));
 	}
 	
-	SConfigNode LastByType()(uint type)
+	CConfigNode LastByType()(uint type)
 	{
 		foreach_reverse(child; Children)
 		{
 			if(child.Type == type)
 				return child;
 		}
-		return SConfigNode();
+		return EmptyNode;
 	}
 	
-	SConfigNode LastByType(T)()
+	CConfigNode LastByType(T)()
 	{
 		return LastByType(ImplicitType!(T));
 	}
@@ -750,18 +761,18 @@ struct SConfigNode
 			return def;
 		}
 		
-		auto val_node = key_node.LastByType!(T);
+		auto val_node = key_node.LastByType!(T)();
 		if(val_node.IsEmpty)
 		{
 			set_def(true);
 			return def;
 		}
 		
-		return val_node.Value(def, is_def);
+		return val_node.Get(def, is_def);
 	}
 	
 	@property
-	SConfigNode[] Children()
+	CConfigNode[] Children()
 	{
 		return ChildrenVal;
 	}
@@ -782,15 +793,6 @@ struct SConfigNode
 	{
 		TypeVal = Empty;
 	}
-	
-	enum : uint
-	{
-		Empty,
-		Real,
-		String,
-		Boolean,
-		MaxType
-	}
 protected:
 	template ImplicitType(T)
 	{
@@ -801,10 +803,10 @@ protected:
 		else static if(is(T : real) || is(T : uint) || is(T : int))
 			enum uint ImplicitType = Real;
 		else
-			static assert(0, "Cannot retrieve this type from SConfigNode.");
+			static assert(0, "Cannot retrieve this type from CConfigNode.");
 	}
 
-	SConfigNode[] ChildrenVal;
+	CConfigNode[] ChildrenVal;
 	
 	union UStorage
 	{
@@ -819,12 +821,15 @@ protected:
 
 unittest
 {
-	SConfigNode node;
+	auto node = new CConfigNode;
 	node = 1;
+	node = 2;
 	node.Reset();
 	node = 1.0;
+	node = 2.0;
 	node.Reset();
 	node = "abc";
+	node = "def";
 	bool failed = false;
 	try
 	{
@@ -836,14 +841,14 @@ unittest
 	}
 	assert(failed);
 	
-	static assert(SConfigNode.ImplicitType!(int) == SConfigNode.Real);
-	static assert(SConfigNode.ImplicitType!(immutable(char)[]) == SConfigNode.String);
-	static assert(SConfigNode.ImplicitType!(bool) == SConfigNode.Boolean);
+	static assert(CConfigNode.ImplicitType!(int) == CConfigNode.Real);
+	static assert(CConfigNode.ImplicitType!(immutable(char)[]) == CConfigNode.String);
+	static assert(CConfigNode.ImplicitType!(bool) == CConfigNode.Boolean);
 }
 
-SConfigNode LoadNode(SParser* parser)
+CConfigNode LoadNode(SParser* parser)
 {
-	SConfigNode ret;
+	auto ret = new CConfigNode;
 	
 	@property
 	SToken cur_token()
@@ -854,13 +859,13 @@ SConfigNode LoadNode(SParser* parser)
 	switch(parser.Peek)
 	{
 		case EToken.String:
-			ret = cur_token.String;
+			ret.Set(cur_token.String);
 			break;
 		case EToken.Boolean:
-			ret = cur_token.String == "true";
+			ret.Set(cur_token.String.length == "true".length);
 			break;
 		case EToken.Real:
-			ret = Float.toFloat(cur_token.String);
+			ret.Set(Float.toFloat(cur_token.String));
 			break;
 		default:
 			throw new CDConfigException("Expected a string, boolean or real, not '" ~ cur_token.String.idup ~ "'.", parser.FileName, cur_token.Line);
@@ -877,18 +882,16 @@ SConfigNode LoadNode(SParser* parser)
 				if(parser.Peek == EToken.EOF)
 					throw new CDConfigException("Unexpected EOF while parsing a composite.", parser.FileName, old_line);
 				auto new_child = LoadNode(parser);
-				assert(new_child.Type != SConfigNode.Empty);
-				ret ~= new_child;
+				assert(new_child.Type != CConfigNode.Empty);
+				ret.Add(new_child);
 			}
 			parser.Advance;
 			break;
 		}
 		case EToken.EOF:
 			throw new CDConfigException("Expected ';' not EOF.", parser.FileName, cur_token.Line);
-			break;
 		case EToken.RightBrace:
 			throw new CDConfigException("Expected ';' not '}'.", parser.FileName, cur_token.Line);
-			break;
 		case EToken.SemiColon:
 			parser.Advance;
 			break;
@@ -896,28 +899,28 @@ SConfigNode LoadNode(SParser* parser)
 		case EToken.Real:
 		case EToken.Boolean:
 			auto new_child = LoadNode(parser);
-			assert(new_child.Type != SConfigNode.Empty);
-			ret ~= new_child;
+			assert(new_child.Type != CConfigNode.Empty);
+			ret.Add(new_child);
 			break;
 	}
 	
 	return ret;
 }
 
-SConfigNode LoadConfig(const(char)[] filename, const(char)[] src = null)
+CConfigNode LoadConfig(const(char)[] filename, const(char)[] src = null)
 {
 	if(src is null)
 		src = cast(char[])File.get(filename);
 	
 	auto parser = SParser(filename, src);
 	
-	SConfigNode root;
+	auto root = new CConfigNode;
 	
 	while(parser.Peek != EToken.EOF)
 	{
 		auto child = LoadNode(&parser);
-		assert(child.Type != SConfigNode.Empty);
-		root ~= child;
+		assert(child.Type != CConfigNode.Empty);
+		root.Add(child);
 	}
 	
 	return root;
@@ -941,17 +944,17 @@ unittest
 	assert(root.Children.length == 4);
 	
 	size_t count = 0;
-	foreach(node; root.FilterByType!(real))
+	foreach(node; root.FilterByType!(real)())
 		count++;
 	assert(count == 1, Format("{}", count));
 	
 	count = 0;
-	foreach(node; root.FilterByType(SConfigNode.String))
+	foreach(node; root.FilterByType(CConfigNode.String))
 		count++;
 	assert(count == 2, Format("{}", count));
 	
 	count = 0;
-	foreach(node; root.FilterByType(SConfigNode.Boolean))
+	foreach(node; root.FilterByType(CConfigNode.Boolean))
 		count++;
 	assert(count == 1, Format("{}", count));
 	
@@ -961,7 +964,7 @@ unittest
 	child = root.LastByValue("a");
 	assert(!child.IsEmpty);
 	assert(child == "a");
-	auto str = child.Value!(cstring)();
+	auto str = child.Get!(cstring)();
 	assert(str == "a");
 	
 	count = 0;
@@ -969,7 +972,7 @@ unittest
 		count++;
 	assert(count == 3, Format("{}", count));
 	
-	assert(root.LastByValue("a").LastByType!(cstring) == "b");
+	assert(root.LastByValue("a").LastByType!(cstring)() == "b");
 	
 	bool is_def;
 	cstring value = root.ValueOf!(cstring, string)("a", null, &is_def);
