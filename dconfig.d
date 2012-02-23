@@ -613,7 +613,21 @@ class CConfigNode
 		int opApply(scope int delegate(ref CConfigNode) dg)
 		{
 			int ret = 0;
-			foreach(child; Node.Children)
+			foreach(child; Node.ChildrenVal)
+			{
+				if(Filter(child))
+				{
+					if((ret = dg(child)) != 0)
+						return ret;
+				}
+			}
+			return ret;
+		}
+		
+		int opApplyReverse(scope int delegate(ref CConfigNode) dg)
+		{
+			int ret = 0;
+			foreach_reverse(child; Node.ChildrenVal)
 			{
 				if(Filter(child))
 				{
@@ -629,20 +643,23 @@ class CConfigNode
 	{
 		CConfigNode Node;
 		T Value;
+		enum Type = CConfigNode.ImplicitType!(T); 
+		
+		bool Filter(CConfigNode node)
+		{
+			return node.Type == Type || node == Value;
+		}
 
 		int opApply(scope int delegate(ref CConfigNode) dg)
 		{
-			enum type = CConfigNode.ImplicitType!(T);
-			int ret = 0;
-			foreach(child; Node.Children)
-			{
-				if(child.Type == type || child == Value)
-				{
-					if((ret = dg(child)) != 0)
-						return ret;
-				}
-			}
-			return ret;
+			auto filter = SFilterFruct(Node, &Filter);
+			return filter.opApply(dg);
+		}
+		
+		int opApplyReverse(scope int delegate(ref CConfigNode) dg)
+		{
+			auto filter = SFilterFruct(Node, &Filter);
+			return filter.opApplyReverse(dg);
 		}
 	}
 	
@@ -650,19 +667,22 @@ class CConfigNode
 	{
 		CConfigNode Node;
 		uint Type;
+		
+		bool Filter(CConfigNode node)
+		{
+			return node.Type == Type;
+		}
 
 		int opApply(scope int delegate(ref CConfigNode) dg)
 		{
-			int ret = 0;
-			foreach(child; Node.Children)
-			{
-				if(child.Type == Type)
-				{
-					if((ret = dg(child)) != 0)
-						return ret;
-				}
-			}
-			return ret;
+			auto filter = SFilterFruct(Node, &Filter);
+			return filter.opApply(dg);
+		}
+		
+		int opApplyReverse(scope int delegate(ref CConfigNode) dg)
+		{
+			auto filter = SFilterFruct(Node, &Filter);
+			return filter.opApplyReverse(dg);
 		}
 	}
 	
@@ -772,9 +792,15 @@ class CConfigNode
 	}
 	
 	@property
-	CConfigNode[] Children()
+	SFilterFruct Children()
 	{
-		return ChildrenVal;
+		return Filter((node) { return true; });
+	}
+	
+	@property
+	size_t Length()
+	{
+		return ChildrenVal.length;
 	}
 	
 	@property
@@ -941,7 +967,7 @@ unittest
 	`;
 	
 	auto root = LoadConfig("test", src);
-	assert(root.Children.length == 4);
+	assert(root.Length == 4);
 	
 	size_t count = 0;
 	foreach(node; root.FilterByType!(real)())
