@@ -3,7 +3,7 @@ module dconfig;
 import TextUtil = tango.text.Util;
 import Array = tango.core.Array;
 import Float = tango.text.convert.Float;
-import tango.core.Variant;
+import tango.core.Vararg;
 import tango.text.convert.Format;
 import tango.io.device.File;
 import tango.io.FilePath;
@@ -440,7 +440,7 @@ unittest
 	assert(parser.Advance == EToken.Boolean && parser.CurToken.String == `true`, parser.CurToken.String);
 }
 
-class CConfigNode
+final class CConfigNode
 {
 	static __gshared CConfigNode EmptyNode;
 	enum : uint
@@ -457,10 +457,71 @@ class CConfigNode
 		EmptyNode = new CConfigNode;
 	}
 	
-	this(uint type = Empty)
+	this(...)
 	{
-		assert(type < MaxType);
-		TypeVal = type;
+		if(_arguments.length == 0)
+		{
+			TypeVal = Empty;
+			return;
+		}
+		
+		bool get(T, R)(TypeInfo arg_type, out R ret)
+		{
+			if(arg_type == typeid(T))
+			{
+				ret = cast(R)va_arg!(R)(_argptr);
+				return true;
+			}
+			return false;
+		}
+		
+		bool get_real(TypeInfo arg_type, out real ret)
+		{
+			return get!(int)(arg_type, ret) || get!(uint)(arg_type, ret) ||
+			       get!(float)(arg_type, ret) || get!(double)(arg_type, ret) ||
+			       get!(real)(arg_type, ret); 
+		}
+		
+		bool get_bool(TypeInfo arg_type, out bool ret)
+		{
+			return get!(bool)(arg_type, ret);
+		}
+		
+		bool get_cstring(TypeInfo arg_type, out cstring ret)
+		{
+			return get!(immutable(char)[])(arg_type, ret) || get!(const(char)[])(arg_type, ret) ||
+			       get!(char[])(arg_type, ret); 
+		}
+
+		void try_assign(TypeInfo arg_type, CConfigNode node)
+		{
+			bool bool_ret;
+			real real_ret;
+			cstring cstring_ret;
+			
+			if(get_bool(arg_type, bool_ret))
+				node = bool_ret;
+			else if(get_real(arg_type, real_ret))
+				node = real_ret;
+			else if(get_cstring(arg_type, cstring_ret))
+				node = cstring_ret;
+			else
+				throw new Exception("Can't assign '" ~ arg_type.toString() ~ "' to CConfigNode.");
+		}
+		
+		try_assign(_arguments[0], this);
+		
+		foreach(arg_type; _arguments[1..$])
+		{
+			CConfigNode child;
+			if(!get!(CConfigNode)(arg_type, child))
+			{
+				child = new CConfigNode;
+				try_assign(arg_type, child);
+			}
+			
+			Add(child);
+		}
 	}
 
 	alias Set opAssign;
